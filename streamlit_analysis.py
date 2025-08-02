@@ -64,8 +64,26 @@ if uploaded_file is not None:
             'tSnowflakeConnection', 'tSnowflakeInput', 'tSnowflakeOutput'
         }
         
+        # Components that don't add complexity (utility/infrastructure components)
+        utility_components = {
+            'tDie', 'tSnowflakeConnection', 'tSnowflakeClose', 'tWarn'
+        }
+        
         high_complexity_components = {
             'tRunJob', 'tJavaRow', 'tJava', 'tPerlRow', 'tPython'
+        }
+        
+        # Database-specific components for categorization
+        db2_components = {
+            'tDB2Input', 'tDB2Output', 'tDB2Connection', 'tDB2Close',
+            'tDB2Commit', 'tDB2Rollback', 'tDB2Row', 'tDB2BulkExec',
+            'tDB2TableList', 'tDB2SCD'
+        }
+        
+        oracle_components = {
+            'tOracleInput', 'tOracleOutput', 'tOracleConnection', 'tOracleClose',
+            'tOracleCommit', 'tOracleRollback', 'tOracleRow', 'tOracleBulkExec',
+            'tOracleTableList', 'tOracleSCD'
         }
         
         def categorize_size(count):
@@ -81,20 +99,46 @@ if uploaded_file is not None:
         def calculate_complexity(component_types):
             components_set = set(component_types)
             
-            # Check if only snowflake components
-            if components_set.issubset(snowflake_components):
+            # Remove utility components from complexity calculation
+            complexity_relevant_components = components_set - utility_components
+            
+            # If no complexity-relevant components remain, it's low complexity
+            if not complexity_relevant_components:
+                return "Low"
+            
+            # Check if only snowflake components (excluding utility)
+            if complexity_relevant_components.issubset(snowflake_components):
                 return "Low"
             
             # Check for high complexity components
-            if any(comp in high_complexity_components for comp in components_set):
+            if any(comp in high_complexity_components for comp in complexity_relevant_components):
                 return "High"
             
             # Medium complexity for mixed or other components
             return "Medium"
         
+        def categorize_database_usage(component_types):
+            components_set = set(component_types)
+            
+            has_db2 = bool(components_set.intersection(db2_components))
+            has_oracle = bool(components_set.intersection(oracle_components))
+            has_snowflake = bool(components_set.intersection(snowflake_components))
+            
+            if has_db2 and has_oracle:
+                return "DB2 + Oracle"
+            elif has_db2:
+                return "DB2 Only"
+            elif has_oracle:
+                return "Oracle Only"
+            elif has_snowflake:
+                return "Snowflake Only"
+            else:
+                return "Other/None"
+        
         # Apply categorizations
         file_analysis['size_category'] = file_analysis['component_count'].apply(categorize_size)
         file_analysis['complexity'] = file_analysis['component_types'].apply(calculate_complexity)
+        file_analysis['database_usage'] = file_analysis['component_types'].apply(categorize_database_usage)
         
         # Complexity scoring
         complexity_scores = {"Low": 1, "Medium": 3, "High": 5}
@@ -108,7 +152,7 @@ if uploaded_file is not None:
         # Display analysis table
         st.subheader("📋 File Analysis Summary")
         
-        display_df = file_analysis[['file', 'component_count', 'size_category', 'complexity', 'complexity_score']].copy()
+        display_df = file_analysis[['file', 'component_count', 'size_category', 'complexity', 'database_usage', 'complexity_score']].copy()
         display_df = display_df.sort_values('complexity_score', ascending=False)
         
         st.dataframe(
@@ -119,6 +163,7 @@ if uploaded_file is not None:
                 "component_count": "Component Count",
                 "size_category": "Size Category", 
                 "complexity": "Complexity Level",
+                "database_usage": "Database Usage",
                 "complexity_score": "Complexity Score"
             }
         )
@@ -127,7 +172,7 @@ if uploaded_file is not None:
         st.subheader("📈 Analysis Visualizations")
         
         # Create tabs for different visualizations
-        viz_tab1, viz_tab2, viz_tab3 = st.tabs(["Complexity Distribution", "Heatmap", "Top/Bottom Files"])
+        viz_tab1, viz_tab2, viz_tab3, viz_tab4 = st.tabs(["Complexity Distribution", "Database Usage", "Heatmap", "Top/Bottom Files"])
         
         with viz_tab1:
             col1, col2 = st.columns(2)
@@ -166,6 +211,55 @@ if uploaded_file is not None:
                 st.plotly_chart(fig_size, use_container_width=True)
         
         with viz_tab2:
+            # Database usage analysis
+            database_counts = file_analysis['database_usage'].value_counts()
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Database usage pie chart
+                fig_db_pie = px.pie(
+                    values=database_counts.values,
+                    names=database_counts.index,
+                    title="Database Usage Distribution",
+                    color_discrete_map={
+                        'Snowflake Only': '#87CEEB',
+                        'DB2 Only': '#FFB347',
+                        'Oracle Only': '#FF6B6B',
+                        'DB2 + Oracle': '#DDA0DD',
+                        'Other/None': '#D3D3D3'
+                    }
+                )
+                st.plotly_chart(fig_db_pie, use_container_width=True)
+            
+            with col2:
+                # Database usage bar chart
+                fig_db_bar = px.bar(
+                    x=database_counts.index,
+                    y=database_counts.values,
+                    title="Database Usage Count",
+                    color=database_counts.index,
+                    color_discrete_map={
+                        'Snowflake Only': '#87CEEB',
+                        'DB2 Only': '#FFB347',
+                        'Oracle Only': '#FF6B6B',
+                        'DB2 + Oracle': '#DDA0DD',
+                        'Other/None': '#D3D3D3'
+                    }
+                )
+                fig_db_bar.update_layout(showlegend=False, xaxis_tickangle=-45)
+                st.plotly_chart(fig_db_bar, use_container_width=True)
+            
+            # Database usage details table
+            st.write("**Database Usage Breakdown:**")
+            db_breakdown = file_analysis.groupby('database_usage').agg({
+                'file': 'count',
+                'complexity_score': 'mean'
+            }).round(2)
+            db_breakdown.columns = ['File Count', 'Avg Complexity Score']
+            st.dataframe(db_breakdown, use_container_width=True)
+        
+        with viz_tab3:
             # Heatmap of complexity by size and complexity level
             heatmap_data = file_analysis.groupby(['size_category', 'complexity']).size().unstack(fill_value=0)
             
@@ -180,14 +274,14 @@ if uploaded_file is not None:
             )
             st.plotly_chart(fig_heatmap, use_container_width=True)
         
-        with viz_tab3:
+        with viz_tab4:
             col1, col2 = st.columns(2)
             
             with col1:
                 st.write("**🔥 Top 20 Most Complex Jobs**")
                 top_complex = display_df.head(20)
                 st.dataframe(
-                    top_complex[['file', 'complexity_score', 'complexity', 'size_category']],
+                    top_complex[['file', 'complexity_score', 'complexity', 'size_category', 'database_usage']],
                     use_container_width=True
                 )
             
@@ -195,7 +289,7 @@ if uploaded_file is not None:
                 st.write("**✅ Bottom 20 Easiest Jobs**")
                 bottom_easy = display_df.tail(20)
                 st.dataframe(
-                    bottom_easy[['file', 'complexity_score', 'complexity', 'size_category']],
+                    bottom_easy[['file', 'complexity_score', 'complexity', 'size_category', 'database_usage']],
                     use_container_width=True
                 )
         
@@ -283,7 +377,7 @@ if uploaded_file is not None:
         st.subheader("💾 Download Results")
         
         # Prepare download data
-        download_df = file_analysis[['file', 'component_count', 'size_category', 'complexity', 'complexity_score', 'estimated_hours']].copy()
+        download_df = file_analysis[['file', 'component_count', 'size_category', 'complexity', 'database_usage', 'complexity_score', 'estimated_hours']].copy()
         
         csv_buffer = StringIO()
         download_df.to_csv(csv_buffer, index=False)
