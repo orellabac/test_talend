@@ -214,6 +214,15 @@ if uploaded_file is not None:
             # Database usage analysis
             database_counts = file_analysis['database_usage'].value_counts()
             
+            # Define consistent color mapping for database usage
+            db_color_map = {
+                'Snowflake Only': '#87CEEB',
+                'DB2 Only': '#FFB347',
+                'Oracle Only': '#FF6B6B',
+                'DB2 + Oracle': '#DDA0DD',
+                'Other/None': '#D3D3D3'
+            }
+            
             col1, col2 = st.columns(2)
             
             with col1:
@@ -222,13 +231,7 @@ if uploaded_file is not None:
                     values=database_counts.values,
                     names=database_counts.index,
                     title="Database Usage Distribution",
-                    color_discrete_map={
-                        'Snowflake Only': '#87CEEB',
-                        'DB2 Only': '#FFB347',
-                        'Oracle Only': '#FF6B6B',
-                        'DB2 + Oracle': '#DDA0DD',
-                        'Other/None': '#D3D3D3'
-                    }
+                    color_discrete_map=db_color_map
                 )
                 st.plotly_chart(fig_db_pie, use_container_width=True)
             
@@ -239,13 +242,7 @@ if uploaded_file is not None:
                     y=database_counts.values,
                     title="Database Usage Count",
                     color=database_counts.index,
-                    color_discrete_map={
-                        'Snowflake Only': '#87CEEB',
-                        'DB2 Only': '#FFB347',
-                        'Oracle Only': '#FF6B6B',
-                        'DB2 + Oracle': '#DDA0DD',
-                        'Other/None': '#D3D3D3'
-                    }
+                    color_discrete_map=db_color_map
                 )
                 fig_db_bar.update_layout(showlegend=False, xaxis_tickangle=-45)
                 st.plotly_chart(fig_db_bar, use_container_width=True)
